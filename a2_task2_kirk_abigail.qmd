@@ -1,0 +1,149 @@
+---
+title: "a2_task2_kirk_abigail"
+format: 
+  html:
+    code-fold: true
+    embed-resources: true
+    toc: true
+execute:
+  message: false
+  warning: false
+editor: visual
+theme: quartz
+---
+
+# Text Analysis - Twilight
+
+![](images/clipboard-3190925361.png){width="500"}
+
+Source: “Bella Where the Hell Have You Been Loca by Quoc Tuan Pham.” *Pixels*, https://pixels.com/featured/bella-where-the-hell-have-you-been-loca-quoc-tuan-pham.html. Accessed 12 Feb. 2024.
+
+## Overview
+
+Text citation: Meyer, Stephanie. 2011. *The Twilight Saga*. New York, NY: Little, Brown & Company.
+
+The following text analysis was performed using the full text of the international best seller, *Twilight.* The purpose of this analysis is to determine the words that have the highest occurrence in each chapter, and measure the overall sentiment of the novel by comparing the ratio of postie and negative sentiment words in each chapter. 
+
+The first part of the analysis involves breaking up the full text in individual lines, and assigning the appropriate lines to each chapter. I then further break the text down into individual words in order to count how many times a word appears in each chapter, omitting common stop words like "a", "or", and "the". The final word counts are visualized in bar graphs that display the top five words in each chapter.
+
+The second part of the analysis builds a sentiment analysis for each chapter. I utilized the Bing Lexicon, which assigns a positive or negative sentiment to every word. I applied the lexicon to every chapter, and display the total counts for sentiment in a bar graph to evaluate the overall sentiment of the chapter. The second visualization depicts the log of the ratio of the number of positive words to negative words in each chapter to determine the dominant sentiment in each chapter. 
+
+
+
+## Data Wrangling
+
+```{r libraries}
+library(tidyverse)
+library(tidytext)
+library(pdftools)
+library(ggwordcloud)
+library(MetBrewer)
+```
+
+```{r}
+twilight_text <- pdftools::pdf_text(here::here('data/Twilight.pdf'))
+
+twilight_lines <- data.frame(twilight_text) %>% 
+  mutate(page = 1:n()) %>%
+  mutate(text_full = str_split(twilight_text, pattern = '\\n')) %>% 
+  unnest(text_full) %>% 
+  mutate(text_full = str_trim(text_full)) 
+
+```
+
+```{r}
+twilight_chap <- twilight_lines %>% 
+  mutate(chapter = ifelse(str_detect(text_full, "Chapter"), text_full, NA)) %>% 
+  fill(chapter, .direction = 'down') %>% 
+  separate(col = chapter, into = c("chap_word", "chap"), sep = " ") %>% 
+  na.omit() 
+```
+
+```{r}
+twilight_words <- twilight_chap %>% 
+  unnest_tokens(word, text_full)  %>% 
+  select(-twilight_text) %>% 
+   filter(word != 'meyer') %>% 
+   filter(word != 'twilight') %>% 
+   filter(word != 'page') %>% 
+  filter(word != 'stephanie')
+
+twilight_wordcount <- twilight_words %>% 
+  group_by(chap, word) %>% 
+  summarize(n = n()) %>% 
+  mutate(chap = factor(chap, levels = c('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'))) %>% 
+  ungroup() 
+
+```
+
+```{r}
+twilight_word_no_stop <- twilight_wordcount %>% 
+  anti_join(stop_words, by = 'word')
+
+top_5_words <- twilight_word_no_stop %>% 
+  mutate(word_count = as.factor(n)) %>% 
+  group_by(chap) %>% 
+  arrange(-n) %>% 
+  slice(1:5) %>%
+  ungroup()
+
+```
+
+## Word Count by Chapter
+
+```{r}
+#| fig-cap: 'Top 5 words with most occurances in each chapter'
+
+## look at frogs to reorder 
+
+ggplot(data = top_5_words, aes(x = n, y = fct_reorder(word, n))) +
+  geom_col(fill = 'palevioletred2', alpha = 0.8) +
+  facet_wrap(~chap, scales = "free") + theme_bw() + labs(x = 'Word Count', y = 'Word') 
+```
+
+## Sentiment Analysis
+
+```{r}
+#| fig-cap: 'Word counts for words associated with a positive or negative sentiment in each chapter'
+
+bing_lex <- get_sentiments(lexicon = "bing")
+
+twilight_bing <- twilight_words %>% 
+  inner_join(bing_lex, by = 'word')
+
+bing_counts <- twilight_bing %>% 
+  group_by(chap, sentiment) %>% 
+  summarize(count = n())
+
+ggplot(data = bing_counts, aes(x = sentiment, y = count, fill = sentiment)) + 
+  geom_col() +
+  scale_fill_met_d("Benedictus") +
+  facet_wrap(~ chap, scales = 'free') + 
+  theme_bw() +
+  labs(x = 'Sentiment', y = 'Word Count', fill = "Sentiment") +
+  theme(legend.position='none')
+
+```
+
+```{r}
+#| fig-cap: 'Log-ratio of the occurance of words associated with positive or negative sentiment. The columns represents the net sentiment per chapter.'
+
+bing_log_ratio_ch <- twilight_bing %>% 
+  group_by(chap) %>% 
+  summarize(n_pos = sum(sentiment == 'positive'), 
+            n_neg = sum(sentiment  == 'negative'),
+            log_ratio = log(n_pos/n_neg)) %>% 
+            mutate(pos_neg = ifelse(log_ratio > 0, 'positive', 'negative'))
+
+ggplot(data = bing_log_ratio_ch, aes(x = chap, y = log_ratio, fill = pos_neg)) + 
+  geom_col() +
+  scale_fill_met_d("Benedictus") + 
+  theme_bw() +
+   labs(x = 'Chapter', y = 'Log Sentiment Ratio', fill = 'Sentiment')
+
+
+
+        
+
+```
+

@@ -1,0 +1,94 @@
+---
+title: "a2_task1_kirk_abigail"
+format: 
+  html:
+    code-fold: true
+    embed-resources: true
+    toc: false
+execute:
+  message: false
+  warning: false
+editor: visual
+theme: yeti
+---
+
+# Oil Spills in California
+
+## Overview
+
+Data citation: California Department of Fish and Wildlife. Oil Spill Incident Tracking \[Ds394\]. 24 Oct. 2023, https://gis.data.ca.gov/datasets/7464e3d6f4924b50ad06e5a553d71086_0/explore?location=36.873195,-119.422009,6.74.
+
+The following analysis was performed using oil spill tracking data courtesy of the California Department of Fish and Wildlife. The purpose of this analysis is to both visual the total number of observed oil spills in California, and determine which counties have the most oil spill incidents. Both maps were created by projected the coordinates provided in the oil spill data set onto a the coordinates of a California map with county divisions. The oil spill data was first re-projected to match the coordinate reference system of the California map. The first map kept the exact coordinates of each oil spill in order to plot each individual oil spill event. The second map used the boundary lines of each county to count each oil spill observation within a county boundary. The map then plots the density of oil spill in each county, using a continuous color scale to demonstrate the differences in oil spill density between counties.
+
+## Setup and Data Wrangling
+
+```{r packages}
+
+library(tidyverse)
+library(here)
+library(broom)
+library(sf)
+library(tmap)
+library(tidyverse)
+library(here)
+library(terra)
+library(tidyterra)
+library(gstat)
+library(stars)
+
+```
+
+```{r data}
+
+ca_counties_raw_sf <- read_sf(here("data/ca_counties"), layer = "CA_Counties_TIGER2016") 
+
+
+
+ca_counties_sf <- ca_counties_raw_sf %>% 
+  janitor::clean_names() %>% 
+  mutate(land_km2 = aland / 1e6) %>% 
+  select(county = name, land_km2)
+
+oil_df <- read_csv(here("data/oil_spill_tracking.csv")) %>% 
+  janitor::clean_names()
+
+oil_sf <- oil_df %>% drop_na(longitude, latitude) %>% 
+  st_as_sf(coords = c("x", "y"))
+
+st_crs(oil_sf) <- 3857
+
+```
+
+::: panel-tabset
+## Oil Spill Counts Using Tmap
+
+```{r}
+#| fig-cap: 'Oil spills incidents in California. Each point represents a unique observation of an oil spill.'
+#| 
+tmap_mode(mode = 'plot')
+
+tm_shape(ca_counties_sf) + 
+  tm_borders(lty = 1) +
+  tm_fill(col = "yellowgreen", alpha = 0.5) +
+  tm_shape(oil_sf) +
+  tm_dots(size = 0.02, col = 'black', labels = 'Oil Spill', title = "Oil Spills in CA") 
+```
+
+## Oil Spill Density by County
+
+```{r}
+#| fig-cap: 'California oil spill incident density by county.'
+
+joint_sf <- st_join(ca_counties_sf, oil_sf)
+
+oil_counts_sf <- joint_sf %>% 
+  group_by(localecoun) %>% 
+  summarize(n_records = sum(!is.na(objectid)))
+
+ggplot() +
+geom_sf(data = oil_counts_sf, aes(fill = n_records), color = 'darkgray', size =1) +
+scale_fill_gradientn(colors = c('lightgrey', 'coral1', 'darkorchid')) +
+theme_void() +
+ labs(fill = 'Number of Oil Spills Per County')
+```
+:::
